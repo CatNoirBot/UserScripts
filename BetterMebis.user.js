@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name         BetterMebis
 // @namespace    http://tampermonkey.net/
-// @version      2026-09-28
+// @version      1.0.0
 // @description  try to take over the world!
 // @author       You
 // @match        https://lernplattform.bycs.de/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=bycs.de
+// @downloadURL  https://raw.githubusercontent.com/CatNoirBot/UserScripts/main/BetterMebis.user.js
+// @updateURL    https://raw.githubusercontent.com/CatNoirBot/UserScripts/main/BetterMebis.user.js
 // @require      https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js
 // @grant        none
 // ==/UserScript==
@@ -66,6 +68,10 @@
 .bm-badge{position:absolute;top:max(12px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);
   z-index:20;pointer-events:none;background:rgba(0,0,0,.55);padding:4px 12px;border-radius:14px;
   font-size:13px;font-weight:700;opacity:0;transition:opacity .15s ease}
+.bm-title{position:absolute;top:max(10px,env(safe-area-inset-top));left:max(14px,env(safe-area-inset-left));
+  max-width:calc(100% - 128px);z-index:30;pointer-events:none;background:rgba(0,0,0,.55);
+  padding:6px 14px;border-radius:10px;font-size:13px;font-weight:600;line-height:1.3;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bm-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:25;
   display:flex;align-items:center;gap:28px;pointer-events:none}
 #mini-video-overlay .bm-cbtn{pointer-events:auto;width:56px;height:56px;border-radius:50%;padding:0;
@@ -88,11 +94,15 @@
     return n;
   };
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const fileNameFromUrl = (u) => {
+    try { return decodeURIComponent(new URL(u, location.href).pathname.split('/').pop() || ''); }
+    catch (_) { return ''; }
+  };
 
   // ---------------------------------------------------------------------
   // Player
   // ---------------------------------------------------------------------
-  function openCenteredVideoPlayer(videoUrl) {
+  function openCenteredVideoPlayer(videoUrl, titleText) {
     const existing = document.getElementById('mini-video-overlay');
     if (existing && existing._cleanup) existing._cleanup(true);
 
@@ -121,6 +131,9 @@
     centerBtn.append(backBtn, centerPlay, fwdBtn);
     const closeBtn = el('button', 'bm-close bm-ui', '✕');
     closeBtn.setAttribute('aria-label', 'Schließen');
+    const titleName = ((titleText || '').trim()).replace(/\s+/g, ' ') ||
+      fileNameFromUrl(videoUrl).replace(/\.mp4$/i, '');
+    const titleEl = el('div', 'bm-title bm-ui', titleName);
 
     // Steuerleiste
     const bar = el('div', 'bm-bar bm-ui');
@@ -179,7 +192,7 @@
 
     row.append(left, right);
     bar.append(seek, row);
-    overlay.append(video, layer, spinner, indicator, badge, menu, centerBtn, closeBtn, bar);
+    overlay.append(video, layer, spinner, indicator, badge, menu, centerBtn, titleEl, closeBtn, bar);
 
     // -------------------------------------------------------------------
     // Helfer
@@ -1430,7 +1443,7 @@ setInterval(() => {
       link.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        openCenteredVideoPlayer(link.href);
+        openCenteredVideoPlayer(link.href, (link.textContent || '').trim());
       });
     }
   });
