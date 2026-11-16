@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BetterMebis
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.1.0
 // @description  try to take over the world!
 // @author       You
 // @match        https://lernplattform.bycs.de/*
@@ -923,7 +923,7 @@ function addCopyHtmlButton() {
   const btn = document.createElement('button');
   btn.id = 'quick-copy-html-btn';
   btn.innerText = 'HTML';
-  btn.title = 'HTML der aktuellen Seite kopieren';
+  btn.title = 'HTML der aktuellen Seite kopieren oder speichern';
 
   Object.assign(btn.style, {
     position: 'fixed',
@@ -949,32 +949,145 @@ function addCopyHtmlButton() {
     btn.style.backgroundColor = 'rgba(0, 0, 0, 0.85)';
   };
   btn.onmouseleave = () => {
-    btn.style.opacity = '0.4';
-    btn.style.backgroundColor = 'rgba(0, 0, 0, 0.35)';
-  };
-
-  btn.onclick = async () => {
-    try {
-      await navigator.clipboard.writeText(document.documentElement.outerHTML);
-      btn.innerText = '✓';
-      btn.style.backgroundColor = '#1b7a3e';
-      btn.style.opacity = '1';
-
-      setTimeout(() => {
-        btn.innerText = 'HTML';
-        btn.style.backgroundColor = 'rgba(0, 0, 0, 0.35)';
-        btn.style.opacity = '0.4';
-      }, 1200);
-    } catch (err) {
-      console.error('Fehler beim Kopieren des HTMLs:', err);
-      btn.innerText = '✗';
-      setTimeout(() => {
-        btn.innerText = 'HTML';
-      }, 1200);
+    if (!menuOpen) {
+      btn.style.opacity = '0.4';
+      btn.style.backgroundColor = 'rgba(0, 0, 0, 0.35)';
     }
   };
 
-  document.body.appendChild(btn);
+  // Feedback am Hauptbutton (✓ / ✗)
+  const showFeedback = (ok) => {
+    btn.innerText = ok ? '✓' : '✗';
+    btn.style.backgroundColor = ok ? '#1b7a3e' : '#a02020';
+    btn.style.opacity = '1';
+    setTimeout(() => {
+      btn.innerText = 'HTML';
+      btn.style.backgroundColor = 'rgba(0, 0, 0, 0.35)';
+      btn.style.opacity = '0.4';
+    }, 1200);
+  };
+
+  // Dateiname aus Titel bzw. URL
+  const pageFileName = () => {
+    let name = (document.title || '').trim();
+    if (!name) name = fileNameFromUrl(location.href) || 'seite.html';
+    name = name.replace(/[<>:"/\\|?*\x00-\x1f]+/g, '_').replace(/\s+/g, '_').replace(/\.html?$/i, '');
+    return (name || 'seite').slice(0, 80) + '.html';
+  };
+
+  // ---------------------------------------------------------------------
+  // Aktion 1: HTML in die Zwischenablage kopieren (bisherige Funktion)
+  // ---------------------------------------------------------------------
+  const copyPageHtml = async () => {
+    try {
+      await navigator.clipboard.writeText(document.documentElement.outerHTML);
+      showFeedback(true);
+    } catch (err) {
+      console.error('Fehler beim Kopieren des HTMLs:', err);
+      showFeedback(false);
+    }
+  };
+
+  // ---------------------------------------------------------------------
+  // Aktion 2: Gesamte HTML als Datei speichern (Download)
+  // ---------------------------------------------------------------------
+  const savePageHtmlFile = () => {
+    try {
+      // Kopie ohne die eingefügten Skript-Elemente serialisieren
+      const clone = document.documentElement.cloneNode(true);
+      clone.querySelectorAll('#quick-copy-html-btn, #quick-copy-html-menu').forEach(n => n.remove());
+
+      const html = '<!DOCTYPE html>\n' + clone.outerHTML;
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = pageFileName();
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+
+      showFeedback(true);
+    } catch (err) {
+      console.error('Fehler beim Speichern des HTMLs:', err);
+      showFeedback(false);
+    }
+  };
+
+  // ---------------------------------------------------------------------
+  // Mini-Menü über dem Button
+  // ---------------------------------------------------------------------
+  const menu = document.createElement('div');
+  menu.id = 'quick-copy-html-menu';
+  Object.assign(menu.style, {
+    position: 'fixed',
+    bottom: '30px',
+    right: '6px',
+    zIndex: '99999',
+    display: 'none',
+    flexDirection: 'column',
+    gap: '2px',
+    userSelect: 'none'
+  });
+
+  const mkItem = (label, title, action) => {
+    const item = document.createElement('button');
+    item.innerText = label;
+    item.title = title;
+    Object.assign(item.style, {
+      padding: '8px 12px',
+      fontSize: '12px',
+      fontFamily: 'monospace',
+      textAlign: 'left',
+      color: '#ffffff',
+      backgroundColor: 'rgba(0, 0, 0, 0.85)',
+      border: '1px solid rgba(255, 255, 255, 0.15)',
+      borderRadius: '4px',
+      cursor: 'pointer',
+      whiteSpace: 'nowrap'
+    });
+    item.onmouseenter = () => { item.style.backgroundColor = 'rgba(0, 0, 0, 0.95)'; };
+    item.onmouseleave = () => { item.style.backgroundColor = 'rgba(0, 0, 0, 0.85)'; };
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      hideMenu();
+      action();
+    });
+    return item;
+  };
+
+  menu.append(
+    mkItem('📋 Kopieren', 'HTML der aktuellen Seite in die Zwischenablage kopieren', copyPageHtml),
+    mkItem('💾 Speichern (.html)', 'Gesamte HTML-Seite als Datei speichern', savePageHtmlFile)
+  );
+
+  let menuOpen = false;
+  const hideMenu = () => {
+    menuOpen = false;
+    menu.style.display = 'none';
+    btn.style.opacity = '0.4';
+    btn.style.backgroundColor = 'rgba(0, 0, 0, 0.35)';
+  };
+  const showMenu = () => {
+    menuOpen = true;
+    menu.style.display = 'flex';
+    btn.style.opacity = '1';
+    btn.style.backgroundColor = 'rgba(0, 0, 0, 0.85)';
+  };
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    menuOpen ? hideMenu() : showMenu();
+  });
+
+  // Menü schließen, wenn woanders hingeklickt wird
+  document.addEventListener('click', (e) => {
+    if (menuOpen && !menu.contains(e.target) && e.target !== btn) hideMenu();
+  });
+
+  document.body.append(menu, btn);
 }
 // -----------------------------------------------------------------------
 // FORUM-POSTS ALS PDF SPEICHERN
