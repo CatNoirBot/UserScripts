@@ -102,8 +102,16 @@
   // ---------------------------------------------------------------------
   // Player
   // ---------------------------------------------------------------------
-  function openCenteredVideoPlayer(videoUrl, titleText) {
-    const existing = document.getElementById('mini-video-overlay');
+  function openCenteredVideoPlayer(videoUrl, titleText, targetWin) {
+    const D = targetWin ? targetWin.document : document;
+    const W = targetWin || window;
+    const el = (tag, cls, text) => {
+      const n = D.createElement(tag);
+      if (cls) n.className = cls;
+      if (text != null) n.textContent = text;
+      return n;
+    };
+    const existing = D.getElementById('mini-video-overlay');
     if (existing && existing._cleanup) existing._cleanup(true);
 
     const overlay = el('div');
@@ -258,8 +266,8 @@
 
     // Vollbild (+ Querformat auf Mobilgeräten)
     const toggleFullscreen = () => {
-      if (document.fullscreenElement) {
-        document.exitFullscreen().catch(() => {});
+      if (D.fullscreenElement) {
+        D.exitFullscreen().catch(() => {});
       } else if (overlay.requestFullscreen) {
         overlay.requestFullscreen().catch(err => console.error('Vollbild-Fehler:', err.message));
       } else if (video.webkitEnterFullscreen) {   // iPhone Safari
@@ -268,15 +276,15 @@
     };
     const onFsChange = () => {
       try {
-        if (document.fullscreenElement && screen.orientation && screen.orientation.lock &&
-            window.matchMedia('(pointer:coarse)').matches) {
-          screen.orientation.lock('landscape').catch(() => {});
-        } else if (!document.fullscreenElement && screen.orientation && screen.orientation.unlock) {
-          screen.orientation.unlock();
+        if (D.fullscreenElement && W.screen.orientation && W.screen.orientation.lock &&
+            W.matchMedia('(pointer:coarse)').matches) {
+          W.screen.orientation.lock('landscape').catch(() => {});
+        } else if (!D.fullscreenElement && W.screen.orientation && W.screen.orientation.unlock) {
+          W.screen.orientation.unlock();
         }
       } catch (_) { /* ignorieren */ }
     };
-    document.addEventListener('fullscreenchange', onFsChange);
+    D.addEventListener('fullscreenchange', onFsChange);
 
     // -------------------------------------------------------------------
     // Video-Events
@@ -318,7 +326,7 @@
         seek.setAttribute('aria-valuenow', String(sec));
       }
     };
-    const tick = () => { updateProgress(); raf = requestAnimationFrame(tick); };
+    const tick = () => { updateProgress(); raf = W.requestAnimationFrame(tick); };
     tick();
 
     // -------------------------------------------------------------------
@@ -483,7 +491,7 @@
     // Tastatur
     // -------------------------------------------------------------------
     const handleKeyDown = (e) => {
-      const tag = document.activeElement && document.activeElement.tagName;
+      const tag = D.activeElement && D.activeElement.tagName;
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       let handled = true;
@@ -500,46 +508,46 @@
         case ',': case '<': stepFrame(-1); break;
         case '.': case '>': stepFrame(1); break;
         case 'Home': seekTo(0); break;
-        case 'Escape': if (!document.fullscreenElement) closePlayer(); else handled = false; break;
+        case 'Escape': if (!D.fullscreenElement) closePlayer(); else handled = false; break;
         default: handled = false;
       }
       if (handled) { e.preventDefault(); e.stopPropagation(); showUI(); }
     };
-    document.addEventListener('keydown', handleKeyDown, true);
+    D.addEventListener('keydown', handleKeyDown, true);
 
     // -------------------------------------------------------------------
     // Schließen (auch per Android-Zurück-Taste)
     // -------------------------------------------------------------------
-    const prevOverflow = document.documentElement.style.overflow;
-    document.documentElement.style.overflow = 'hidden';
+    const prevOverflow = D.documentElement.style.overflow;
+    D.documentElement.style.overflow = 'hidden';
 
     let closed = false;
     const onPop = () => closePlayer(true);
     function closePlayer(silent) {
       if (closed) return;
       closed = true;
-      cancelAnimationFrame(raf);
+      W.cancelAnimationFrame(raf);
       clearTimeout(hideTimer); clearTimeout(tapTimer); clearTimeout(indTimer); clearTimeout(accumTimer);
       if (g) clearTimeout(g.lp);
-      document.removeEventListener('keydown', handleKeyDown, true);
-      document.removeEventListener('fullscreenchange', onFsChange);
-      window.removeEventListener('popstate', onPop);
-      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-      try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (_) {}
+      D.removeEventListener('keydown', handleKeyDown, true);
+      D.removeEventListener('fullscreenchange', onFsChange);
+      W.removeEventListener('popstate', onPop);
+      if (D.fullscreenElement) D.exitFullscreen().catch(() => {});
+      try { if (W.screen.orientation && W.screen.orientation.unlock) W.screen.orientation.unlock(); } catch (_) {}
       video.pause();
       video.removeAttribute('src');
       video.load();                                 // Download/Stream wirklich beenden
       overlay.remove();
-      document.documentElement.style.overflow = prevOverflow;
-      if (silent !== true && history.state && history.state.betterMebis) history.back();
+      D.documentElement.style.overflow = prevOverflow;
+      if (silent !== true && W.history.state && W.history.state.betterMebis) W.history.back();
     }
     closeBtn.addEventListener('click', () => closePlayer());
     overlay._cleanup = closePlayer;
 
-    try { history.pushState({ betterMebis: 1 }, ''); } catch (_) {}
-    window.addEventListener('popstate', onPop);
+    try { W.history.pushState({ betterMebis: 1 }, ''); } catch (_) {}
+    W.addEventListener('popstate', onPop);
 
-    document.body.appendChild(overlay);
+    D.body.appendChild(overlay);
     video.play().catch(() => {});
     syncPlayState();
     showUI();
@@ -1542,6 +1550,29 @@ function onInitHtml(){
     addCoursePageOpenButton();
 }
 // -----------------------------------------------------------------------
+// VIDEO IN EINEM NEUEN TAB ÖFFNEN (wie der PDF-Export, mit Custom-Player)
+// -----------------------------------------------------------------------
+function openVideoInNewTab(videoUrl, titleText) {
+  const win = window.open('', '_blank');
+  if (!win) return;
+  try {
+    // Player-Styles in den neuen Tab kopieren
+    if (!win.document.getElementById(STYLE_ID)) {
+      const st = document.getElementById(STYLE_ID);
+      if (st && win.document.head) win.document.head.appendChild(st.cloneNode(true));
+    }
+    const inject = () => {
+      try {
+        if (win.document && win.document.body) {
+          openCenteredVideoPlayer(videoUrl, titleText, win);
+        }
+      } catch (_) {}
+    };
+    if (win.document.readyState === 'complete' || win.document.readyState === 'interactive') inject();
+    else win.addEventListener('load', inject);
+  } catch (_) {}
+}
+// -----------------------------------------------------------------------
 // ALLE 100ms NACH .MP4-LINKS SUCHEN UND MIT DEM PLAYER VERKNÜPFEN
 // -----------------------------------------------------------------------
 setInterval(() => {
@@ -1556,7 +1587,7 @@ setInterval(() => {
       link.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        openCenteredVideoPlayer(link.href, (link.textContent || '').trim());
+        openVideoInNewTab(link.href, (link.textContent || '').trim());
       });
     }
   });
